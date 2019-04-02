@@ -22,6 +22,7 @@
 // Listen to the default port 5555, the Yún webserver
 // will forward there all the HTTP requests you send
 BridgeServer server;
+String command;
 
 void setup() {
   // Bridge startup
@@ -44,7 +45,7 @@ void loop() {
 
   // Skip if there is no client
   if (!client) {
-     return;
+     return doOneStep();
   }
   // Process request
   processRequest(client);
@@ -53,36 +54,106 @@ void loop() {
   client.stop();
 }
 
+void doOneStep(){
+  if(command == "blink"){
+    return blinkStep();
+  }
+  if(command == "fade"){
+    return fadeStep();
+  }
+}
+
+String readString(BridgeClient client){
+  String data = client.readStringUntil('/');
+  int lastCharIndex = data.length() - 1;
+  if(data[lastCharIndex] == '\n'){
+    return data.substring(0, lastCharIndex-1);
+  }
+  return data;
+}
+
 void processRequest(BridgeClient client) {
   client.setTimeout(10);
-  String command = client.readStringUntil('/');
-  if(command[command.length() - 1] == '\n'){
-    client.println("Command ends with \\n");
-    command = command.substring(0, command.length()-2);
-  }
+  command = readString(client);
   client.println(F("-----"));
   client.print(F("Received Command: "));
-  client.print(command);
+  client.println(command);
   client.println(F("-----"));
   
   if (command == "on"){
-     digitalWrite(13, HIGH);
-     client.println(F("turnOn(client)"));
-     Bridge.put("D13", "HIGH");
-     return;
+     return turnOn(client);
   }
   if (command == "off"){
-      digitalWrite(13, LOW);
-       client.print(F("turnOff(client)"));
-     Bridge.put("D13", "LOW");
-      return;
+      return turnOff(client);
   }
   if (command == "blink"){
-      client.print(F("blink(client)"));
-      return;
+      return startBlinking(client);
   }
   if (command == "fade"){
-      client.print(F("fade(client)"));
-      return;
+      return startFading(client);
   }
 }
+
+void turnOn(BridgeClient client){
+     digitalWrite(13, HIGH);
+     client.println(F("LED is now ON"));
+}
+
+void turnOff(BridgeClient client){
+     digitalWrite(13, LOW);
+     client.println(F("LED is now OFF"));
+}
+
+int ledState;
+unsigned long stepDuration;
+unsigned long lastStepTime;
+
+unsigned long readDuration(BridgeClient client){
+   client.read(); // skip the /
+   unsigned long stepValue = client.parseInt();
+   client.read(); // skip the /
+   String stepUnit = readString(client);
+   if(stepUnit == "s"){
+     return stepValue * 1000;
+   }
+   return stepValue;
+}
+
+void startBlinking(BridgeClient client){
+  ledState = digitalRead(13);
+  stepDuration = readDuration(client);
+  client.print(F("Start blinking with LED initially ")); 
+  if(ledState == HIGH){
+    client.println(F("ON"));
+  } else{
+    client.println(F("OFF"));
+  }
+  client.print(F("Toggling LED state every "));
+  client.print(stepDuration);
+  client.println(F(" ms"));
+  lastStepTime = millis();
+}
+
+
+void blinkStep(){
+  unsigned long timeDelta = millis() - lastStepTime;
+  if(timeDelta < stepDuration){
+    return;
+  }
+  if(ledState == LOW) {
+    ledState = HIGH;
+  } else{
+    ledState = LOW;
+  }
+  digitalWrite(13, ledState);
+  lastStepTime = millis();
+}
+
+void startFading(BridgeClient client){
+  
+}
+
+void fadeStep(){
+  
+}
+
