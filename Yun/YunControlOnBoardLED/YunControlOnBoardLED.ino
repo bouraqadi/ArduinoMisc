@@ -11,7 +11,7 @@
   "http://<myArduinoName>.local/arduino/on" turn ON the LED
   "http://<myArduinoName>.local/arduino/off" turn OFF the LED
   "http://<myArduinoName>.local/arduino/blink/300/ms" toggles the LED every 300 milliseconds
-  "http://<myArduinoName>.local/arduino/fade/2/s" fades in or out the LED during 2 seconds
+  "http://<myArduinoName>.local/arduino/fade/100/1/s" fades in or out the LED changing the intensity by 100 every 1 second. Intensity varies between 0 and 255.
 
 */
 
@@ -23,13 +23,19 @@
 // will forward there all the HTTP requests you send
 BridgeServer server;
 String command;
+int ledState;
+const int ledPin = 13;
+
+unsigned long stepDuration;
+unsigned long lastStepTime;
+int ledFadingDelta;
 
 void setup() {
   // Bridge startup
-  pinMode(13, OUTPUT);
-  digitalWrite(13, HIGH);
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, HIGH);
   Bridge.begin();
-  digitalWrite(13, LOW);
+  digitalWrite(ledPin, LOW);
 
   // Listen for incoming connection only from localhost
   // (no one from the external network could connect)
@@ -38,42 +44,35 @@ void setup() {
  }
 
 void loop() {
-  delay(50); // Poll every 50ms
-
   // Get clients coming from server
   BridgeClient client = server.accept();
 
   // Skip if there is no client
   if (!client) {
-     return doOneStep();
+     return doCommandStep();
   }
   // Process request
   processRequest(client);
-
+ 
   // Close connection and free resources.
   client.stop();
 }
 
-void doOneStep(){
+void doCommandStep(){
   if(command == "blink"){
     return blinkStep();
   }
   if(command == "fade"){
     return fadeStep();
   }
-}
-
-String readString(BridgeClient client){
-  String data = client.readStringUntil('/');
-  int lastCharIndex = data.length() - 1;
-  if(data[lastCharIndex] == '\n'){
-    return data.substring(0, lastCharIndex-1);
-  }
-  return data;
+  delay(50); // Poll every 50ms
 }
 
 void processRequest(BridgeClient client) {
-  client.setTimeout(10);
+  client.setTimeout(0);
+//  client.print(F("Bytes available: "));
+//  client.println(client.available());
+  client.available();
   command = readString(client);
   client.println(F("-----"));
   client.print(F("Received Command: "));
@@ -87,31 +86,45 @@ void processRequest(BridgeClient client) {
       return turnOff(client);
   }
   if (command == "blink"){
-      return startBlinking(client);
+       return startBlinking(client);
   }
   if (command == "fade"){
       return startFading(client);
   }
+  client.println(F("Error: Unknown command!"));
+  client.println(F("Valid commands: on, off, blink, fade"));
+  client.println(F("Examples: "));
+  client.println(F("http://<myArduinoName>.local/arduino/on\n---> turn ON the LED"));
+  client.println(F("http://<myArduinoName>.local/arduino/off\n---> turn OFF the LED"));
+  client.println(F("http://<myArduinoName>.local/arduino/blink/2/s\n---> toggles the LED ON/OFF every 2 seconds"));
+  client.println(F("http://<myArduinoName>.local/arduino/fade/10/100/ms\n---> fades the LED in/out by 10 every 100 milliseconds. Intensity varies between 0 and 255."));
 }
 
 void turnOn(BridgeClient client){
-     digitalWrite(13, HIGH);
+     digitalWrite(ledPin, HIGH);
      client.println(F("LED is now ON"));
 }
 
 void turnOff(BridgeClient client){
-     digitalWrite(13, LOW);
+     digitalWrite(ledPin, LOW);
      client.println(F("LED is now OFF"));
 }
 
-int ledState;
-unsigned long stepDuration;
-unsigned long lastStepTime;
+String readString(BridgeClient client){
+  String data = client.readStringUntil('/');
+  int lastCharIndex = data.length() - 1;
+  if(data[lastCharIndex] == '\n'){ // Drop end of line chararcter if any
+    return data.substring(0, lastCharIndex - 1);
+  }
+  return data;
+}
 
 unsigned long readDuration(BridgeClient client){
-   client.read(); // skip the /
-   unsigned long stepValue = client.parseInt();
-   client.read(); // skip the /
+   int stepValue = client.parseInt();
+   if(stepValue == 0){
+      return 100;
+   }
+   client.read(); // skip the / after the value
    String stepUnit = readString(client);
    if(stepUnit == "s"){
      return stepValue * 1000;
@@ -120,24 +133,22 @@ unsigned long readDuration(BridgeClient client){
 }
 
 void startBlinking(BridgeClient client){
-  ledState = digitalRead(13);
+  ledState = HIGH;
+  digitalWrite(ledPin, ledState); 
   stepDuration = readDuration(client);
-  client.print(F("Start blinking with LED initially ")); 
-  if(ledState == HIGH){
-    client.println(F("ON"));
-  } else{
-    client.println(F("OFF"));
-  }
+  client.println(F("Start blinking with LED initially ON")); 
   client.print(F("Toggling LED state every "));
   client.print(stepDuration);
   client.println(F(" ms"));
   lastStepTime = millis();
 }
 
+unsigned long deltaTimeSinceLastStep(){
+  return millis() - lastStepTime;
+}
 
 void blinkStep(){
-  unsigned long timeDelta = millis() - lastStepTime;
-  if(timeDelta < stepDuration){
+  if(deltaTimeSinceLastStep() < stepDuration){
     return;
   }
   if(ledState == LOW) {
@@ -145,15 +156,49 @@ void blinkStep(){
   } else{
     ledState = LOW;
   }
-  digitalWrite(13, ledState);
+  digitalWrite(ledPin, ledState);
   lastStepTime = millis();
 }
 
 void startFading(BridgeClient client){
-  
+  ledState = 0;
+  analogWrite(ledPin, ledState); 
+  ledFadingDelta = client.parseInt();
+  if(ledFadingDelta > 255){
+    ledFadingDelta = 255;
+  }
+  if(ledFadingDelta < 1){
+    ledFadingDelta = 1;
+  }  
+  stepDuration = readDuration(client);
+  int totalSteps = 256 / ledFadingDelta;
+  unsigned long totalDuration = stepDuration * totalSteps ;
+  client.println(F("Start fading with LED initially OFF"));
+  client.print(F("Each fading step will change LED intesity by "));
+  client.println(ledFadingDelta);
+  client.print(F("Each fading step will take "));
+  client.print(stepDuration);
+  client.println(F(" ms"));
+  client.print(F("One full fading in/out cycle will take about "));
+  client.print(totalDuration);
+  client.println(F(" ms"));
+  lastStepTime = millis();
 }
 
 void fadeStep(){
-  
+  if(deltaTimeSinceLastStep() < stepDuration){
+    return;
+  }
+  ledState = ledState + ledFadingDelta;
+  if(ledState < 0){
+    ledState = 0;
+  }
+  if(ledState > 255){
+    ledState = 255;
+  }
+  analogWrite(ledPin, ledState); 
+  if(ledState >= 255 || ledState <= 0){
+    ledFadingDelta = -1 * ledFadingDelta;
+  }
+  lastStepTime = millis();
 }
-
