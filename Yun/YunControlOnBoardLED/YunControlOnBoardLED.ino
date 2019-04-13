@@ -10,8 +10,9 @@
 
   "http://<myArduinoName>.local/arduino/on" turn ON the LED
   "http://<myArduinoName>.local/arduino/off" turn OFF the LED
-  "http://<myArduinoName>.local/arduino/blink/300/ms" toggles the LED every 300 milliseconds
-  "http://<myArduinoName>.local/arduino/fade/100/1/s" fades in or out the LED changing the intensity by 100 every 1 second. Intensity varies between 0 and 255.
+  "http://<myArduinoName>.local/arduino/blink/2/s" toggles the LED every 2 seconds
+  "http://<myArduinoName>.local/arduino/fade/50/300/ms" fades in or out the LED changing the intensity by 50 every 300 milliseconds. 
+  Intensity step can be any value between 1 and 255.
 
 */
 
@@ -70,9 +71,7 @@ void doCommandStep(){
 
 void processRequest(BridgeClient client) {
   client.setTimeout(0);
-//  client.print(F("Bytes available: "));
-//  client.println(client.available());
-  client.available();
+  client.available(); //Workaround bug. Ensures receving the full parameters
   command = readString(client);
   client.println(F("-----"));
   client.print(F("Received Command: "));
@@ -94,10 +93,18 @@ void processRequest(BridgeClient client) {
   client.println(F("Error: Unknown command!"));
   client.println(F("Valid commands: on, off, blink, fade"));
   client.println(F("Examples: "));
-  client.println(F("http://<myArduinoName>.local/arduino/on\n---> turn ON the LED"));
-  client.println(F("http://<myArduinoName>.local/arduino/off\n---> turn OFF the LED"));
-  client.println(F("http://<myArduinoName>.local/arduino/blink/2/s\n---> toggles the LED ON/OFF every 2 seconds"));
-  client.println(F("http://<myArduinoName>.local/arduino/fade/10/100/ms\n---> fades the LED in/out by 10 every 100 milliseconds. Intensity varies between 0 and 255."));
+  client.println(F("http://<myArduinoName>.local/arduino/on"));
+  client.println(F("---> turn ON the LED"));
+  client.println();
+  client.println(F("http://<myArduinoName>.local/arduino/off"));
+  client.println(F("---> turn OFF the LED"));
+  client.println();
+  client.println(F("http://<myArduinoName>.local/arduino/blink/2/s"));
+  client.println(F("---> toggles the LED ON/OFF every 2 seconds"));
+  client.println();
+  client.println(F("http://<myArduinoName>.local/arduino/fade/10/100/ms"));
+  client.println(F("---> fades the LED in/out by 10 every 100 milliseconds."));
+  client.println(F("Intensity step range is 1 to 255."));
 }
 
 void turnOn(BridgeClient client){
